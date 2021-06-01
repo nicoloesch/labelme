@@ -18,7 +18,6 @@ class GenerateSegmentedData(QWidget):
         self.setLayout(layout)
         self.input_directory = LineEntry("labeled data directory", QFileDialog.DirectoryOnly)
         self.output_directory = LineEntry("output directory", QFileDialog.DirectoryOnly)
-        self.labels_file = LineEntry("labels file", QFileDialog.ExistingFile)
         self.output_visualization = QRadioButton('Create visualization output')
         self.output_visualization.setChecked(True)
 
@@ -36,46 +35,49 @@ class GenerateSegmentedData(QWidget):
         button_layout.addWidget(coco_instance_seg_btn)
 
         layout.addWidget(self.input_directory)
-        layout.addWidget(self.labels_file)
         layout.addWidget(self.output_directory)
         layout.addWidget(self.output_visualization)
         layout.addWidget(button_widget)
 
-    def retrieve_labels(self, file):
-        labels = open(file).readlines()
-        # ensure that the labels start with ignore and background
-        try:
-            labels.remove('__ignore__')
-        except ValueError:
-            pass
-        try:
-            labels.remove('_background_')
-        except ValueError:
-            pass
-        new_labels = ['__ignore__', '_background_']
-        new_labels.extend(labels)
-        class_names = []
+    def retrieve_labels(self, input_dir):
+        """This function will get redundant with the sqlite database"""
+        # TODO, No indices for labels so far
+        # get all files that end on json
+        labels = set()
+        for file in glob.glob(osp.join(input_dir, "*.json")):
+            try:
+                _file = open(file)
+                _json = json.load(_file)
+                _shapes = _json['shapes']
+                for _shape in _shapes:
+                    labels.add(_shape['label'])
+            except ValueError:
+                pass
+                """
+                class_names = []
+                class_name_to_id = {}
+                for i, line in enumerate(new_labels):
+                    class_id = i - 1  # starts with -1
+                    class_name = line.strip()
+                    class_name_to_id[class_name] = class_id
+                    if class_id == -1:
+                        assert class_name == "__ignore__"
+                        continue
+                    elif class_id == 0:
+                        assert class_name == "_background_"
+                    class_names.append(class_name)
+                """
         class_name_to_id = {}
-        for i, line in enumerate(new_labels):
-            class_id = i - 1  # starts with -1
-            class_name = line.strip()
-            class_name_to_id[class_name] = class_id
-            if class_id == -1:
-                assert class_name == "__ignore__"
-                continue
-            elif class_id == 0:
-                assert class_name == "_background_"
-            class_names.append(class_name)
-
-        return tuple(class_names), class_name_to_id
+        for idx, _label in enumerate(labels):
+            class_name_to_id[_label] = idx
+        return list(labels), class_name_to_id
 
     def do_semantic_segmentation_voc(self):
         output_dir = self.output_directory.line_edit.text()
         input_dir = self.input_directory.line_edit.text()
-        labels = self.labels_file.line_edit.text()
         noviz = not self.output_visualization.isChecked()
 
-        if '' in [output_dir, input_dir, labels]:
+        if '' in [output_dir, input_dir]:
             return
         if len(os.listdir(output_dir)) > 0:
             diag = QMessageBox()
@@ -91,7 +93,7 @@ class GenerateSegmentedData(QWidget):
                 osp.join(output_dir, "SegmentationClassVisualization")
             )
 
-        class_names, class_name_to_id = self.retrieve_labels(labels)
+        class_names, class_name_to_id = self.retrieve_labels(input_dir)
         out_class_names_file = osp.join(output_dir, "class_names.txt")
         with open(out_class_names_file, "w") as f:
             f.writelines("\n".join(class_names))
